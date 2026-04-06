@@ -1,0 +1,245 @@
+#!/bin/bash
+
+VERSION="1.0.0"
+
+ensure_gcloud() {
+    if ! command -v gcloud >/dev/null 2>&1; then
+        echo "gcloud not found. Install Google Cloud SDK: https://cloud.google.com/sdk/docs/install"
+        return 1
+    fi
+
+    # Check cloud-shell subcommand availability
+    if ! gcloud alpha cloud-shell --help >/dev/null 2>&1; then
+        echo "Cloud Shell 'alpha' subcommand not available."
+        read -p "Install alpha components now? [y/N] " ans
+        if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+            echo "Will run: gcloud components install alpha (in background)"
+            gcloud components install alpha >/dev/null 2>&1 &
+            echo "Installation started in background. Re-run this command after installation completes."
+        else
+            echo "You can enable it with: gcloud components install alpha"
+            return 1
+        fi
+    fi
+}
+
+get_md5_local() {
+    local f="$1"
+    if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$f" 2>/dev/null | awk '{print $1}'
+    elif command -v md5 >/dev/null 2>&1; then
+        md5 -q "$f" 2>/dev/null
+    else
+        # fallback: size:mtime
+        if stat -c%s "$f" >/dev/null 2>&1; then
+            printf "%s:%s" "$(stat -c%s "$f")" "$(stat -c%Y "$f")"
+        else
+            printf "%s:%s" "$(stat -f%z "$f" 2>/dev/null)" "$(stat -f%m "$f" 2>/dev/null)"
+        fi
+    fi
+}
+
+get_md5_remote() {
+    local rel="$1"
+    gcloud alpha cloud-shell ssh --authorize-session --command \
+        "if command -v md5sum >/dev/null 2>&1; then md5sum \"~/$rel\" 2>/dev/null | awk '{print \\\$1}'; elif command -v md5 >/dev/null 2>&1; then md5 -q \"~/$rel\" 2>/dev/null; else if stat -c%s \"~/$rel\" >/dev/null 2>&1; then echo \"\$(stat -c%s \"~/$rel\"):\$(stat -c%Y \"~/$rel\")\"; else echo \"\$(stat -f%z \"~/$rel\" 2>/dev/null):\$(stat -f%m \"~/$rel\" 2>/dev/null)\"; fi; fi" 2>/dev/null || true
+}
+
+DRY_RUN=0
+
+ensure_gcloud || true
+
+case "$1" in
+    "-h"|"--help"|"help")
+        echo ""
+        echo "  gshell — a wrapper around gcloud alpha cloud-shell"
+        echo ""
+        echo "  Usage:"
+        echo "    gshell                           Enter Cloud Shell (interactive SSH)"
+        echo "    gshell send [-r] <file|folder>   Upload file or folder to Cloud Shell"
+        echo "    gshell get  [-r] <file|folder>   Download file or folder from Cloud Shell"
+        echo "    gshell sync [-r] <file|folder>   Sync only changed files to Cloud Shell"
+        echo "    gshell run  <command>             Run a command on Cloud Shell"
+        echo "    gshell open                       Open Cloud Shell in browser"
+        echo "    gshell status                     Show current gcloud project & account info"
+        echo "    gshell -v | --version             Show version"
+        echo "    gshell -h | --help                Show this help message"
+        echo ""
+        ;;
+
+    "-v"|"--version"|"version")
+        echo "gshell v$VERSION"
+        ;;
+
+    "send")
+        shift
+        RECURSE=""
+        DRY_RUN=0
+        while [ "${1:0:1}" = "-" ]; do
+            case "$1" in
+                -r) RECURSE="--recurse"; shift ;;
+                -n|--dry-run) DRY_RUN=1; shift ;;
+                *) break ;;
+            esac
+        done
+        ITEM=$1
+
+        if [ -z "$ITEM" ]; then
+            echo "Usage: gshell send [-r] [-n|--dry-run] <file_or_folder>"
+            exit 1
+        fi
+
+        REL_PATH="${ITEM#./}"
+        REMOTE_DIR=$(dirname "$REL_PATH")
+        BASENAME=$(basename "$REL_PATH")
+
+        echo "Uploading $ITEM to Cloud Shell..."
+        if [ "$DRY_RUN" -eq 1 ]; then
+            echo "DRY RUN: gcloud alpha cloud-shell scp $RECURSE \"localhost:$REL_PATH\" \"cloudshell:~/\""
+        else
+            gcloud alpha cloud-shell scp $RECURSE \
+                "localhost:$REL_PATH" \
+                "cloudshell:~/"
+        fi
+
+        if [ "$DRY_RUN" -eq 0 ]; then
+            gcloud alpha cloud-shell ssh --authorize-session --command "
+                if [ \"$REMOTE_DIR\" != \".\" ]; then
+                    mkdir -p \"~/$(printf '%s' "$REMOTE_DIR")\"
+                    if [ ! -e \"~/$(printf '%s' "$REL_PATH")\" ]; then
+                        mv \"~/$(printf '%s' "$BASENAME")\" \"~/$(printf '%s' "$REL_PATH")\"
+                    fi
+                fi
+            "
+        fi
+        ;;
+
+    "get")
+        shift
+        RECURSE=""
+        DRY_RUN=0
+        while [ "${1:0:1}" = "-" ]; do
+            case "$1" in
+                -r) RECURSE="--recurse"; shift ;;
+                -n|--dry-run) DRY_RUN=1; shift ;;
+                *) break ;;
+            esac
+        done
+        ITEM=$1
+
+        if [ -z "$ITEM" ]; then
+            echo "Usage: gshell get [-r] [-n|--dry-run] <remote_item>"
+            exit 1
+        fi
+
+        REL_PATH="${ITEM#./}"
+        LOCAL_DIR=$(dirname "$REL_PATH")
+
+        echo "Downloading $ITEM from Cloud Shell..."
+        mkdir -p "$LOCAL_DIR"
+
+        if [ "$DRY_RUN" -eq 1 ]; then
+            echo "DRY RUN: gcloud alpha cloud-shell scp $RECURSE \"cloudshell:~/$REL_PATH\" \"localhost:$REL_PATH\""
+        else
+            gcloud alpha cloud-shell scp $RECURSE \
+                "cloudshell:~/$REL_PATH" \
+                "localhost:$REL_PATH"
+        fi
+        ;;
+
+    "status")
+        echo "Cloud Shell Info:"
+        echo "-----------------"
+        echo "Account : $(gcloud config get-value core/account 2>/dev/null)"
+        echo "Project : $(gcloud config get-value core/project 2>/dev/null)"
+        echo "Region  : $(gcloud config get-value compute/region 2>/dev/null || echo 'not set')"
+        echo "Zone    : $(gcloud config get-value compute/zone 2>/dev/null || echo 'not set')"
+        ;;
+
+    "open")
+        echo "Opening Cloud Shell in browser..."
+        open "https://shell.cloud.google.com" 2>/dev/null \
+            || xdg-open "https://shell.cloud.google.com" 2>/dev/null \
+            || echo "Visit: https://shell.cloud.google.com"
+        ;;
+
+    "run")
+        shift
+
+        if [ -z "$1" ]; then
+            echo "Usage: gshell run <command>"
+            exit 1
+        fi
+
+        echo "Running command on Cloud Shell: $@"
+        gcloud alpha cloud-shell ssh --authorize-session --command "$*"
+        ;;
+
+    "sync")
+        shift
+        RECURSE=""
+        if [ "$1" == "-r" ]; then RECURSE=1; shift; fi
+        FOLDER=$1
+
+        if [ -z "$FOLDER" ]; then
+            echo "Usage: gshell sync [-r] <file_or_folder>"
+            exit 1
+        fi
+
+        FOLDER="${FOLDER%/}"  # strip trailing slash
+
+        echo "Syncing $FOLDER to Cloud Shell..."
+
+        sync_file() {
+            LOCAL_FILE=$1
+            REL="${LOCAL_FILE#./}"
+            LOCAL_MD5=$(get_md5_local "$LOCAL_FILE")
+
+            REMOTE_MD5=$(get_md5_remote "$REL")
+
+            if [ "$LOCAL_MD5" != "$REMOTE_MD5" ]; then
+                echo "  Uploading: $REL"
+                REMOTE_DIR=$(dirname "$REL")
+                BASENAME=$(basename "$REL")
+
+                if [ "$DRY_RUN" -eq 1 ]; then
+                    echo "    DRY RUN: gcloud alpha cloud-shell scp \"localhost:$LOCAL_FILE\" \"cloudshell:~/$BASENAME\""
+                else
+                    gcloud alpha cloud-shell scp \
+                        "localhost:$LOCAL_FILE" \
+                        "cloudshell:~/$BASENAME"
+
+                    gcloud alpha cloud-shell ssh --authorize-session --command "
+                        if [ \"$REMOTE_DIR\" != \".\" ]; then
+                            mkdir -p \"~/$(printf '%s' "$REMOTE_DIR")\"
+                            mv \"~/$(printf '%s' "$BASENAME")\" \"~/$(printf '%s' "$REL")\"
+                        fi
+                    "
+                fi
+            fi
+        }
+
+        if [ -n "$RECURSE" ]; then
+            if [ ! -d "$FOLDER" ]; then
+                echo "Error: $FOLDER is not a valid folder"
+                exit 1
+            fi
+            mapfile -t FILES < <(find "$FOLDER" -type f)
+            for LOCAL_FILE in "${FILES[@]}"; do
+                sync_file "$LOCAL_FILE"
+            done
+        else
+            if [ ! -f "$FOLDER" ]; then
+                echo "Error: $FOLDER is not a valid file. Use -r for folders."
+                exit 1
+            fi
+            sync_file "$FOLDER"
+        fi
+
+        echo "Sync complete!"
+        ;;
+
+    *)
+        gcloud alpha cloud-shell ssh --authorize-session "$@"
+        ;;
+esac
