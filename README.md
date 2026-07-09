@@ -4,7 +4,7 @@
 
 Instead of typing `gcloud alpha cloud-shell ssh --authorize-session` every time, you just type `gshell`.
 
-**Author**: [Adeloye Adetayo](https://spectra010s.vercel.app)
+**Author**: [Adeloye Adetayo](https://spectra010s.biuld.app)
 
 ---
 
