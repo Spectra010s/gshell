@@ -144,7 +144,7 @@ Tab completion is set up automatically by the installer. After reloading your sh
 - [x] **Phase 2: Authentication & Token Management**
   - Implement OAuth 2.0 Device Flow (RFC 8628) for standalone terminal authentication
   - Local credential caching (`~/.config/gshell/credentials.json`) with auto-refresh
-- [ ] **Phase 3: Cloud Shell API Client**
+- [x] **Phase 3: Cloud Shell API Client**
   - Direct integration with `cloudshell.googleapis.com` (start environment, poll status)
   - Ephemeral SSH keypair generation and public key authorization
 - [ ] **Phase 4: Native SSH & SFTP Engine**
