@@ -135,6 +135,27 @@ Tab completion is set up automatically by the installer. After reloading your sh
 
 ---
 
+## Roadmap & Development Phases (v2.0 Go Rewrite)
+
+- [x] **Phase 1: CLI Skeleton & Flags (Cobra)**
+  - Initialize Go module and Cobra CLI framework
+  - Scaffold subcommands: `upload` (alias `send`), `download` (alias `get`), `sync`, `run`, `status`
+  - Implement namespace conventions (`remote:`) and multi-file destination parsing
+- [ ] **Phase 2: Authentication & Token Management**
+  - Implement OAuth 2.0 Device Flow (RFC 8628) for zero-`gcloud` standalone login
+  - Local credential caching (`~/.config/gshell/credentials.json`) with auto-refresh
+- [ ] **Phase 3: Cloud Shell API Client**
+  - Direct integration with `cloudshell.googleapis.com` (start environment, poll status)
+  - Ephemeral SSH keypair generation and public key authorization
+- [ ] **Phase 4: Native SSH & SFTP Engine**
+  - Interactive terminal PTY (`golang.org/x/term`)
+  - Remote command execution (`gshell run`)
+  - High-speed SFTP file transfers and checksum-based delta sync
+- [ ] **Phase 5: Packaging & Release**
+  - Multi-platform static binary builds (Linux, macOS, Termux)
+
+---
+
 ## Contributing
 
 PRs welcome. Keep changes small and focused. Update the README if you change CLI behavior.
