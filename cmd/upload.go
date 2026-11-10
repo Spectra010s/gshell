@@ -1,8 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strings"
+	gshellSSH "gshell/internal/ssh"
 
 	"github.com/spf13/cobra"
 )
@@ -38,19 +37,24 @@ If destination is omitted, files default to remote:~/`,
 			sources = args[:len(args)-1]
 		}
 
-		// Clean destination prefix
-		remoteDest := strings.TrimPrefix(dest, "remote:")
+		sshClient, err := connectCloudShell(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer sshClient.Close()
 
-		if uploadDryRun {
-			fmt.Printf("[dry-run] Would upload %d source(s) to remote:%s\n", len(sources), remoteDest)
-			for _, src := range sources {
-				fmt.Printf("  -> %s\n", src)
+		sftpClient, err := gshellSSH.NewSFTPClient(sshClient)
+		if err != nil {
+			return err
+		}
+		defer sftpClient.Close()
+
+		for _, src := range sources {
+			if err := sftpClient.Upload(src, dest, uploadRecursive, uploadDryRun); err != nil {
+				return err
 			}
-			return nil
 		}
 
-		fmt.Printf("Uploading %d item(s) to remote:%s (recursive: %v)...\n", len(sources), remoteDest, uploadRecursive)
-		// Phase 4 will call the SFTP transfer engine here
 		return nil
 	},
 }

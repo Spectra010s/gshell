@@ -1,8 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strings"
+	gshellSSH "gshell/internal/ssh"
 
 	"github.com/spf13/cobra"
 )
@@ -27,21 +26,23 @@ Example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		source := args[0]
 		dest := "remote:~/"
-
 		if len(args) > 1 {
 			dest = args[1]
 		}
 
-		remoteDest := strings.TrimPrefix(dest, "remote:")
-
-		if syncDryRun {
-			fmt.Printf("[dry-run] Would sync %s to remote:%s (recursive: %v)\n", source, remoteDest, syncRecursive)
-			return nil
+		sshClient, err := connectCloudShell(cmd.Context())
+		if err != nil {
+			return err
 		}
+		defer sshClient.Close()
 
-		fmt.Printf("Syncing %s to remote:%s (recursive: %v)...\n", source, remoteDest, syncRecursive)
-		// Phase 4 will call the checksum diff + transfer engine here
-		return nil
+		sftpClient, err := gshellSSH.NewSFTPClient(sshClient)
+		if err != nil {
+			return err
+		}
+		defer sftpClient.Close()
+
+		return sftpClient.Sync(source, dest, syncRecursive, syncDryRun)
 	},
 }
 

@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
+
+	gshellSSH "gshell/internal/ssh"
 
 	"github.com/spf13/cobra"
 )
@@ -18,10 +19,14 @@ Examples:
   gshell run "cd myproject && git status"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		sshClient, err := connectCloudShell(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer sshClient.Close()
+
 		remoteCommand := strings.Join(args, " ")
-		fmt.Printf("Running remotely on Cloud Shell: %s\n", remoteCommand)
-		// Phase 4 will call SSH remote execution session here
-		return nil
+		return gshellSSH.RunCommand(sshClient, remoteCommand)
 	},
 }
 

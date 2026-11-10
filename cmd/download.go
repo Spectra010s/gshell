@@ -1,8 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"strings"
+	gshellSSH "gshell/internal/ssh"
 
 	"github.com/spf13/cobra"
 )
@@ -38,20 +37,24 @@ If destination is omitted, files download to your current local directory (./).`
 			sources = args[:len(args)-1]
 		}
 
-		// Ensure local destination doesn't have accidental local: prefix
-		localDest := strings.TrimPrefix(dest, "local:")
+		sshClient, err := connectCloudShell(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer sshClient.Close()
 
-		if downloadDryRun {
-			fmt.Printf("[dry-run] Would download %d item(s) to %s\n", len(sources), localDest)
-			for _, src := range sources {
-				cleanSrc := strings.TrimPrefix(src, "remote:")
-				fmt.Printf("  <- remote:%s\n", cleanSrc)
+		sftpClient, err := gshellSSH.NewSFTPClient(sshClient)
+		if err != nil {
+			return err
+		}
+		defer sftpClient.Close()
+
+		for _, src := range sources {
+			if err := sftpClient.Download(src, dest, downloadRecursive, downloadDryRun); err != nil {
+				return err
 			}
-			return nil
 		}
 
-		fmt.Printf("Downloading %d item(s) to %s (recursive: %v)...\n", len(sources), localDest, downloadRecursive)
-		// Phase 4 will call the SFTP transfer engine here
 		return nil
 	},
 }

@@ -147,7 +147,7 @@ Tab completion is set up automatically by the installer. After reloading your sh
 - [x] **Phase 3: Cloud Shell API Client**
   - Direct integration with `cloudshell.googleapis.com` (start environment, poll status)
   - Ephemeral SSH keypair generation and public key authorization
-- [ ] **Phase 4: Native SSH & SFTP Engine**
+- [x] **Phase 4: Native SSH & SFTP Engine**
   - Interactive terminal PTY (`golang.org/x/term`)
   - Remote command execution (`gshell run`)
   - High-speed SFTP file transfers and checksum-based delta sync

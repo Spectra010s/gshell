@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	gshellSSH "gshell/internal/ssh"
+
 	"github.com/spf13/cobra"
 )
 
@@ -11,8 +13,14 @@ var rootCmd = &cobra.Command{
 	Use:     "gshell",
 	Short:   "Terminal client for Google Cloud Shell",
 	Version: "2.0.0",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Connecting to Cloud Shell...")
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sshClient, err := connectCloudShell(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer sshClient.Close()
+
+		return gshellSSH.InteractiveSession(sshClient)
 	},
 }
 
