@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "gshell/cmd"
 
 func main() {
-	fmt.Println("gshell v2.0.0")
+	cmd.Execute()
 }
