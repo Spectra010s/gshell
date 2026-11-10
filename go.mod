@@ -3,6 +3,7 @@ module gshell
 go 1.27.3
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/pkg/sftp v1.13.12 // indirect
