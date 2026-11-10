@@ -141,8 +141,8 @@ Tab completion is set up automatically by the installer. After reloading your sh
   - Initialize Go module and Cobra CLI framework
   - Scaffold subcommands: `upload` (alias `send`), `download` (alias `get`), `sync`, `run`, `status`
   - Implement namespace conventions (`remote:`) and multi-file destination parsing
-- [ ] **Phase 2: Authentication & Token Management**
-  - Implement OAuth 2.0 Device Flow (RFC 8628) for zero-`gcloud` standalone login
+- [x] **Phase 2: Authentication & Token Management**
+  - Implement OAuth 2.0 Device Flow (RFC 8628) for standalone terminal authentication
   - Local credential caching (`~/.config/gshell/credentials.json`) with auto-refresh
 - [ ] **Phase 3: Cloud Shell API Client**
   - Direct integration with `cloudshell.googleapis.com` (start environment, poll status)
