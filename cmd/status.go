@@ -16,6 +16,15 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
+		// Check if credentials exist before attempting to query Cloud Shell
+		if _, err := auth.LoadToken(); err != nil {
+			if err == auth.ErrNoCredentials {
+				fmt.Println("Not authenticated. Run 'gshell auth login' to sign in.")
+				return nil
+			}
+			return err
+		}
+
 		tokenSource, err := auth.GetTokenSource(ctx)
 		if err != nil {
 			return err

@@ -3,32 +3,14 @@ package auth
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
-// Login runs the complete interactive Device Flow authentication
+// Login runs the complete interactive authentication flow
 func Login(ctx context.Context) (*oauth2.Token, error) {
-	clientID := os.Getenv("GSHELL_CLIENT_ID")
-	clientSecret := os.Getenv("GSHELL_CLIENT_SECRET")
-
-	authResp, err := RequestDeviceCode(ctx, clientID)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println()
-	fmt.Println("  Google Cloud Shell Authentication")
-	fmt.Println("  ---------------------------------")
-	fmt.Printf("  1. Open this link:   %s\n", authResp.VerificationURL)
-	fmt.Printf("  2. Enter this code:  %s\n", authResp.UserCode)
-	fmt.Println()
-	fmt.Println("  Waiting for authorization in browser...")
-
-	token, err := PollForToken(ctx, clientID, clientSecret, authResp.DeviceCode, authResp.Interval)
+	token, err := RequestAuthCodeLogin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +19,7 @@ func Login(ctx context.Context) (*oauth2.Token, error) {
 		return nil, fmt.Errorf("failed to save credentials: %w", err)
 	}
 
+	fmt.Println()
 	fmt.Println("  Authentication successful! Credentials saved.")
 	fmt.Println()
 	return token, nil
@@ -78,23 +61,7 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 		}
 	}
 
-	clientID := os.Getenv("GSHELL_CLIENT_ID")
-	if clientID == "" {
-		clientID = defaultClientID
-	}
-	clientSecret := os.Getenv("GSHELL_CLIENT_SECRET")
-	if clientSecret == "" {
-		clientSecret = defaultClientSecret
-	}
-
-	conf := &oauth2.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		Endpoint:     google.Endpoint,
-		Scopes:       []string{CloudPlatformScope},
-	}
-
-	// Create an auto-refreshing token source backed by our saved token
+	conf := GetOAuthConfig()
 	liveSource := conf.TokenSource(ctx, tok)
 
 	return &persistentTokenSource{
