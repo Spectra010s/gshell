@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"golang.org/x/oauth2"
@@ -37,6 +38,10 @@ func (p *persistentTokenSource) Token() (*oauth2.Token, error) {
 
 	tok, err := p.source.Token()
 	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "invalid_grant") || strings.Contains(errStr, "expired") || strings.Contains(errStr, "revoked") {
+			return nil, fmt.Errorf("authentication session has expired or was revoked.\nTo re-authenticate, please run: gshell auth login")
+		}
 		return nil, err
 	}
 
@@ -46,19 +51,14 @@ func (p *persistentTokenSource) Token() (*oauth2.Token, error) {
 }
 
 // GetTokenSource returns a valid, auto-refreshing oauth2.TokenSource.
-// If no credentials are found, it prompts the user to authenticate.
+// If no credentials are found, it returns an error prompting the user to log in.
 func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	tok, err := LoadToken()
 	if err != nil {
 		if err == ErrNoCredentials {
-			// Trigger interactive login if not authenticated yet
-			tok, err = Login(ctx)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
+			return nil, fmt.Errorf("to get started with gshell, please run: gshell auth login")
 		}
+		return nil, err
 	}
 
 	conf := GetOAuthConfig()

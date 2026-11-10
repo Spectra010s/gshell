@@ -19,7 +19,7 @@ var statusCmd = &cobra.Command{
 		// Check if credentials exist before attempting to query Cloud Shell
 		if _, err := auth.LoadToken(); err != nil {
 			if err == auth.ErrNoCredentials {
-				fmt.Println("Not authenticated. Run 'gshell auth login' to sign in.")
+				fmt.Println("To get started with gshell, please run: gshell auth login")
 				return nil
 			}
 			return err

@@ -1,8 +1,8 @@
 package cloudshell
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// SSHKeyManager manages the local Ed25519 keypair for Cloud Shell sessions
+// SSHKeyManager manages the local RSA keypair for Cloud Shell sessions
 type SSHKeyManager struct {
 	keyDir string
 }
@@ -37,10 +37,10 @@ func NewSSHKeyManager() (*SSHKeyManager, error) {
 	return &SSHKeyManager{keyDir: keyDir}, nil
 }
 
-// GetOrCreateKey loads an existing Ed25519 keypair or generates a new one
+// GetOrCreateKey loads an existing RSA keypair or generates a new one
 func (m *SSHKeyManager) GetOrCreateKey() (ssh.Signer, string, error) {
-	privPath := filepath.Join(m.keyDir, "id_ed25519")
-	pubPath := filepath.Join(m.keyDir, "id_ed25519.pub")
+	privPath := filepath.Join(m.keyDir, "id_rsa")
+	pubPath := filepath.Join(m.keyDir, "id_rsa.pub")
 
 	// If keys exist on disk, read and return them
 	if privBytes, err := os.ReadFile(privPath); err == nil {
@@ -56,10 +56,10 @@ func (m *SSHKeyManager) GetOrCreateKey() (ssh.Signer, string, error) {
 		}
 	}
 
-	// Generate new Ed25519 keypair
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	// Generate new RSA 2048 keypair (supported format for Cloud Shell API)
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to generate ed25519 key: %w", err)
+		return nil, "", fmt.Errorf("failed to generate rsa key: %w", err)
 	}
 
 	// Convert private key to OpenSSH PEM format
@@ -75,7 +75,7 @@ func (m *SSHKeyManager) GetOrCreateKey() (ssh.Signer, string, error) {
 	}
 
 	// Format public key in authorized_keys format
-	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	sshPubKey, err := ssh.NewPublicKey(&privKey.PublicKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to convert public key: %w", err)
 	}
@@ -95,15 +95,12 @@ func (m *SSHKeyManager) GetOrCreateKey() (ssh.Signer, string, error) {
 
 // RemoveKeys cleans up the local keypair files
 func (m *SSHKeyManager) RemoveKeys() error {
-	privPath := filepath.Join(m.keyDir, "id_ed25519")
-	pubPath := filepath.Join(m.keyDir, "id_ed25519.pub")
-
 	var errs []error
-	if err := os.Remove(privPath); err != nil && !os.IsNotExist(err) {
-		errs = append(errs, err)
-	}
-	if err := os.Remove(pubPath); err != nil && !os.IsNotExist(err) {
-		errs = append(errs, err)
+	for _, name := range []string{"id_rsa", "id_rsa.pub", "id_ed25519", "id_ed25519.pub"} {
+		p := filepath.Join(m.keyDir, name)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
 	}
 
 	if len(errs) > 0 {

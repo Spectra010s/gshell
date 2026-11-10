@@ -10,9 +10,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "gshell",
-	Short:   "Terminal client for Google Cloud Shell",
-	Version: "2.0.0",
+	Use:          "gshell",
+	Short:        "Terminal client for Google Cloud Shell",
+	Version:      "2.0.0",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sshClient, err := connectCloudShell(cmd.Context())
 		if err != nil {

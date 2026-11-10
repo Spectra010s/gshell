@@ -44,7 +44,7 @@ var authStatusCmd = &cobra.Command{
 		tok, err := auth.LoadToken()
 		if err != nil {
 			if err == auth.ErrNoCredentials {
-				fmt.Println("Not logged in. Run 'gshell auth login' to authenticate.")
+				fmt.Println("To get started with gshell, please run: gshell auth login")
 				return nil
 			}
 			return err
