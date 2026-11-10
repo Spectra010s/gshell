@@ -8,10 +8,8 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "gshell",
-	Short: "A CLI for Google Cloud Shell",
-	Long: `gshell makes working with Google Cloud Shell from your terminal feel natural.
-Instead of typing 'gcloud alpha cloud-shell ssh', you just type 'gshell'.`,
+	Use:     "gshell",
+	Short:   "Terminal client for Google Cloud Shell",
 	Version: "2.0.0",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Connecting to Cloud Shell...")
