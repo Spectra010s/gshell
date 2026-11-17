@@ -12,8 +12,15 @@ import (
 
 var (
 	// ErrNoCredentials indicates that no stored credentials file was found
-	ErrNoCredentials = errors.New("no saved credentials found, please login first")
+	ErrNoCredentials = errors.New("not authenticated")
 )
+
+// credentialFile is the on-disk format: the OAuth token plus the account email
+// discovered from Cloud Shell.
+type credentialFile struct {
+	oauth2.Token
+	Email string `json:"email"`
+}
 
 // getConfigFilePath returns ~/.config/gshell/credentials.json across OSes
 func getConfigFilePath() (string, error) {
@@ -30,8 +37,13 @@ func getConfigFilePath() (string, error) {
 	return filepath.Join(configDir, "gshell", "credentials.json"), nil
 }
 
-// SaveToken persists an OAuth token securely with 0600 permissions
-func SaveToken(token *oauth2.Token) error {
+// CredentialsPath returns the path to the saved credentials file.
+func CredentialsPath() (string, error) {
+	return getConfigFilePath()
+}
+
+// SaveToken persists an OAuth token and account email with 0600 permissions.
+func SaveToken(token *oauth2.Token, email string) error {
 	filePath, err := getConfigFilePath()
 	if err != nil {
 		return err
@@ -43,7 +55,7 @@ func SaveToken(token *oauth2.Token) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(token, "", "  ")
+	data, err := json.MarshalIndent(credentialFile{Token: *token, Email: email}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode credentials: %w", err)
 	}
@@ -56,27 +68,39 @@ func SaveToken(token *oauth2.Token) error {
 	return nil
 }
 
-// LoadToken reads and parses the stored OAuth token if present
-func LoadToken() (*oauth2.Token, error) {
+// LoadCredentials reads the stored token and account email.
+func LoadCredentials() (*oauth2.Token, string, error) {
 	filePath, err := getConfigFilePath()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, ErrNoCredentials
+			return nil, "", ErrNoCredentials
 		}
-		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+		return nil, "", fmt.Errorf("failed to read credentials file: %w", err)
 	}
 
-	var token oauth2.Token
-	if err := json.Unmarshal(data, &token); err != nil {
-		return nil, fmt.Errorf("failed to parse credentials file: %w", err)
+	var creds credentialFile
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return nil, "", fmt.Errorf("failed to parse credentials file: %w", err)
 	}
 
-	return &token, nil
+	return &creds.Token, creds.Email, nil
+}
+
+// LoadToken reads and parses the stored OAuth token if present.
+func LoadToken() (*oauth2.Token, error) {
+	token, _, err := LoadCredentials()
+	return token, err
+}
+
+// Email returns the stored account email.
+func Email() (string, error) {
+	_, email, err := LoadCredentials()
+	return email, err
 }
 
 // DeleteToken removes the stored credentials file

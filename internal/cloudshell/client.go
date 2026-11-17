@@ -29,6 +29,21 @@ type Environment struct {
 	PublicKeys  []string `json:"publicKeys"`
 }
 
+// Account returns the owner email embedded in the environment resource name,
+// e.g. "users/someone@example.com/environments/default".
+func (e *Environment) Account() string {
+	rest, ok := strings.CutPrefix(e.Name, "users/")
+	if !ok {
+		return ""
+	}
+
+	email, _, ok := strings.Cut(rest, "/environments/")
+	if !ok || email == "me" {
+		return ""
+	}
+	return email
+}
+
 // Operation represents a Google Long Running Operation (LRO)
 type Operation struct {
 	Name     string          `json:"name"`
@@ -166,14 +181,9 @@ func (c *Client) StartEnvironment(ctx context.Context, accessToken string) (*Ope
 }
 
 // WaitForOperation polls a Google LRO until it reports done
-func (c *Client) WaitForOperation(ctx context.Context, opName string, statusMsg string) error {
+func (c *Client) WaitForOperation(ctx context.Context, opName string) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-
-	if statusMsg != "" {
-		fmt.Printf("%s...", statusMsg)
-		defer fmt.Println(" done.")
-	}
 
 	for {
 		select {
@@ -208,8 +218,13 @@ func (c *Client) WaitForOperation(ctx context.Context, opName string, statusMsg 
 	}
 }
 
-// Prepare ensures the key is authorized and the machine is running, returning SSH connection info
-func (c *Client) Prepare(ctx context.Context) (*ConnectionInfo, error) {
+// Prepare ensures the key is authorized and the machine is running, returning SSH connection info.
+// onStage, if non-nil, is called before each long-running stage so the caller can render progress.
+func (c *Client) Prepare(ctx context.Context, onStage func(string)) (*ConnectionInfo, error) {
+	if onStage == nil {
+		onStage = func(string) {}
+	}
+
 	keyMgr, err := NewSSHKeyManager()
 	if err != nil {
 		return nil, err
@@ -240,7 +255,7 @@ func (c *Client) Prepare(ctx context.Context) (*ConnectionInfo, error) {
 			return nil, err
 		}
 		if !op.Done {
-			if err := c.WaitForOperation(ctx, op.Name, "Registering SSH key with Cloud Shell"); err != nil {
+			if err := c.WaitForOperation(ctx, op.Name); err != nil {
 				return nil, err
 			}
 		}
@@ -248,6 +263,8 @@ func (c *Client) Prepare(ctx context.Context) (*ConnectionInfo, error) {
 
 	// 2. If machine is not running, start it
 	if env.State != "RUNNING" {
+		onStage("Starting your Cloud Shell machine")
+
 		tok, tokErr := c.tokenSource.Token()
 		var accessToken string
 		if tokErr == nil {
@@ -260,7 +277,7 @@ func (c *Client) Prepare(ctx context.Context) (*ConnectionInfo, error) {
 		}
 
 		if !op.Done {
-			if err := c.WaitForOperation(ctx, op.Name, "Starting Cloud Shell machine"); err != nil {
+			if err := c.WaitForOperation(ctx, op.Name); err != nil {
 				return nil, err
 			}
 		}

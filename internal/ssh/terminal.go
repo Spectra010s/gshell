@@ -12,7 +12,7 @@ import (
 )
 
 // InteractiveSession allocates a pseudo-terminal (PTY) and connects standard I/O
-func InteractiveSession(client *ssh.Client) error {
+func InteractiveSession(client *ssh.Client, project string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
@@ -68,8 +68,14 @@ func InteractiveSession(client *ssh.Client) error {
 	}()
 	defer signal.Stop(sigChan)
 
-	// Start the remote interactive shell
-	if err := session.Shell(); err != nil {
+	// Start the remote interactive shell. If a project is selected, pass it the
+	// same way gcloud does so Cloud Shell configures gcloud for the session.
+	if project != "" {
+		err = session.Start(fmt.Sprintf("DEVSHELL_PROJECT_ID=%s bash -l", project))
+	} else {
+		err = session.Shell()
+	}
+	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)
 	}
 

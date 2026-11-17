@@ -19,6 +19,11 @@ Examples:
   gshell run "cd myproject && git status"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		project, err := resolveProject()
+		if err != nil {
+			return err
+		}
+
 		sshClient, err := connectCloudShell(cmd.Context())
 		if err != nil {
 			return err
@@ -26,7 +31,7 @@ Examples:
 		defer sshClient.Close()
 
 		remoteCommand := strings.Join(args, " ")
-		return gshellSSH.RunCommand(sshClient, remoteCommand)
+		return gshellSSH.RunCommand(sshClient, remoteCommand, project)
 	},
 }
 

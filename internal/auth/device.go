@@ -1,11 +1,9 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -14,6 +12,12 @@ import (
 const (
 	// CloudPlatformScope grants access to Cloud Shell management APIs
 	CloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+	// UserEmailScope lets the sign-in response include the account email
+	UserEmailScope = "https://www.googleapis.com/auth/userinfo.email"
+
+	// OpenIDScope makes the token response include an ID token
+	OpenIDScope = "openid"
 
 	// AuthProxyRedirectURL is Google's OAuth2 redirect landing page that displays
 	// the authorization code for terminal and headless environments.
@@ -41,12 +45,18 @@ func GetOAuthConfig() *oauth2.Config {
 		ClientSecret: clientSecret,
 		Endpoint:     google.Endpoint,
 		RedirectURL:  AuthProxyRedirectURL,
-		Scopes:       []string{CloudPlatformScope},
+		Scopes:       []string{OpenIDScope, UserEmailScope, CloudPlatformScope},
 	}
 }
 
+// Prompter is the minimal terminal interface needed during interactive login.
+type Prompter interface {
+	Infof(format string, a ...any)
+	Prompt(label string) (string, error)
+}
+
 // RequestAuthCodeLogin runs the interactive PKCE authorization code flow
-func RequestAuthCodeLogin(ctx context.Context) (*oauth2.Token, error) {
+func RequestAuthCodeLogin(ctx context.Context, p Prompter) (*oauth2.Token, error) {
 	conf := GetOAuthConfig()
 
 	verifier := oauth2.GenerateVerifier()
@@ -57,24 +67,16 @@ func RequestAuthCodeLogin(ctx context.Context) (*oauth2.Token, error) {
 		oauth2.SetAuthURLParam("prompt", "consent"),
 	)
 
-	fmt.Println()
-	fmt.Println("  Google Cloud Shell Authentication")
-	fmt.Println("  ---------------------------------")
-	fmt.Println("  1. Open this link in your browser:")
-	fmt.Println()
-	fmt.Printf("     %s\n", authURL)
-	fmt.Println()
-	fmt.Println("  2. Complete sign-in and copy the verification code.")
-	fmt.Println()
-	fmt.Print("  Enter verification code: ")
+	p.Infof("Go to the following link in your browser, and complete the sign-in prompts:")
+	p.Infof("")
+	p.Infof("    %s", authURL)
+	p.Infof("")
 
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil && len(input) == 0 {
+	code, err := p.Prompt("Once finished, enter the verification code provided in your browser: ")
+	if err != nil {
 		return nil, fmt.Errorf("failed to read verification code: %w", err)
 	}
 
-	code := strings.TrimSpace(input)
 	if code == "" {
 		return nil, fmt.Errorf("verification code cannot be empty")
 	}
