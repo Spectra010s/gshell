@@ -38,8 +38,8 @@ func resolveProject() (string, error) {
 	return id, nil
 }
 
-// connectCloudShell prepares the environment and establishes an authenticated SSH connection
-func connectCloudShell(ctx context.Context) (*ssh.Client, error) {
+// prepareCloudShell resolves credentials and ensures the environment is ready
+func prepareCloudShell(ctx context.Context) (*cloudshell.ConnectionInfo, error) {
 	tokenSource, err := auth.GetTokenSource(ctx)
 	if err != nil {
 		return nil, err
@@ -69,6 +69,16 @@ func connectCloudShell(ctx context.Context) (*ssh.Client, error) {
 		return nil, fmt.Errorf("failed to prepare cloud shell session: %w", err)
 	}
 	finish(true)
+
+	return connInfo, nil
+}
+
+// connectCloudShell prepares the environment and establishes an authenticated SSH connection
+func connectCloudShell(ctx context.Context) (*ssh.Client, error) {
+	connInfo, err := prepareCloudShell(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	sshClient, err := gshellSSH.Dial(connInfo)
 	if err != nil {

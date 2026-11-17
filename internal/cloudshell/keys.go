@@ -93,6 +93,11 @@ func (m *SSHKeyManager) GetOrCreateKey() (ssh.Signer, string, error) {
 	return signer, pubKeyStr, nil
 }
 
+// PrivateKeyPath returns the path to the private key file.
+func (m *SSHKeyManager) PrivateKeyPath() string {
+	return filepath.Join(m.keyDir, "id_rsa")
+}
+
 // RemoveKeys cleans up the local keypair files
 func (m *SSHKeyManager) RemoveKeys() error {
 	var errs []error

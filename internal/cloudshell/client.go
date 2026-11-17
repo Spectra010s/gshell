@@ -63,6 +63,7 @@ type ConnectionInfo struct {
 	Host     string
 	Port     int
 	Username string
+	KeyPath  string
 	Signer   ssh.Signer
 }
 
@@ -302,6 +303,7 @@ func (c *Client) Prepare(ctx context.Context, onStage func(string)) (*Connection
 		Host:     env.SSHHost,
 		Port:     port,
 		Username: env.SSHUsername,
+		KeyPath:  keyMgr.PrivateKeyPath(),
 		Signer:   signer,
 	}, nil
 }
