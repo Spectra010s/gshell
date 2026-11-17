@@ -199,6 +199,21 @@ func (s *Step) finish(ok bool) {
 	})
 }
 
+// Bytes formats a byte count, e.g. "512 B", "12.4 KB".
+func Bytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
 // ShortDuration formats a duration for progress output, e.g. "0.4s", "1m02s".
 func ShortDuration(d time.Duration) string {
 	if d < time.Second {

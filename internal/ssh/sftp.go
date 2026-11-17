@@ -19,6 +19,55 @@ type SFTPClient struct {
 	client *sftp.Client
 }
 
+// Action describes one file copied or skipped.
+type Action struct {
+	Source  string
+	Dest    string
+	Skipped bool
+}
+
+// Result summarizes a copy operation.
+type Result struct {
+	Files   int
+	Bytes   int64
+	Skipped int
+	Actions []Action
+}
+
+// Merge adds another result to this one.
+func (r *Result) Merge(other *Result) {
+	if other == nil {
+		return
+	}
+	r.Files += other.Files
+	r.Bytes += other.Bytes
+	r.Skipped += other.Skipped
+	r.Actions = append(r.Actions, other.Actions...)
+}
+
+func (r *Result) copied(src, dst string, size int64) {
+	r.Files++
+	r.Bytes += size
+	r.Actions = append(r.Actions, Action{Source: src, Dest: dst})
+}
+
+func (r *Result) skip(src, dst string) {
+	r.Skipped++
+	r.Actions = append(r.Actions, Action{Source: src, Dest: dst, Skipped: true})
+}
+
+// remoteDisplay renders a resolved remote path the way the user would write it.
+func remoteDisplay(p string) string {
+	switch {
+	case p == ".":
+		return "remote:~"
+	case strings.HasPrefix(p, "/"):
+		return "remote:" + p
+	default:
+		return "remote:~/" + p
+	}
+}
+
 // NewSFTPClient initializes an SFTP session over the existing SSH connection
 func NewSFTPClient(sshClient *ssh.Client) (*SFTPClient, error) {
 	client, err := sftp.NewClient(sshClient)
@@ -46,32 +95,43 @@ func (s *SFTPClient) resolveRemotePath(remotePath string) string {
 }
 
 // Upload transfers a single file or directory from local machine to Cloud Shell
-func (s *SFTPClient) Upload(localPath, remotePath string, recurse, dryRun bool) error {
+func (s *SFTPClient) Upload(localPath, remotePath string, recurse, dryRun bool) (*Result, error) {
 	localStat, err := os.Stat(localPath)
 	if err != nil {
-		return fmt.Errorf("local file not found: %w", err)
+		return nil, fmt.Errorf("local file not found: %w", err)
 	}
 
 	targetPath := s.resolveRemotePath(remotePath)
+	res := &Result{}
 
 	if localStat.IsDir() {
 		if !recurse {
-			return fmt.Errorf("%s is a directory (use -r / --recurse to upload)", localPath)
+			return nil, fmt.Errorf("%s is a directory (use -r / --recursive to upload)", localPath)
 		}
-		return s.uploadDir(localPath, targetPath, dryRun)
+		return res, s.uploadDir(localPath, targetPath, dryRun, res)
 	}
 
-	return s.uploadFile(localPath, targetPath, dryRun)
+	return res, s.uploadFile(localPath, targetPath, dryRun, res)
 }
 
-func (s *SFTPClient) uploadFile(localPath, remotePath string, dryRun bool) error {
-	// If remotePath is a directory, append local filename
-	if stat, err := s.client.Stat(remotePath); err == nil && stat.IsDir() {
+func (s *SFTPClient) uploadFile(localPath, remotePath string, dryRun bool, res *Result) error {
+	// If remotePath looks like a directory (ends with / or is an existing dir), append local filename
+	if strings.HasSuffix(remotePath, "/") {
+		if !dryRun {
+			_ = s.client.MkdirAll(remotePath)
+		}
+		remotePath = path.Join(remotePath, filepath.Base(localPath))
+	} else if stat, err := s.client.Stat(remotePath); err == nil && stat.IsDir() {
 		remotePath = path.Join(remotePath, filepath.Base(localPath))
 	}
 
+	var size int64
+	if info, err := os.Stat(localPath); err == nil {
+		size = info.Size()
+	}
+
 	if dryRun {
-		fmt.Printf("[dry-run] upload: %s -> %s\n", localPath, remotePath)
+		res.copied(localPath, remoteDisplay(remotePath), size)
 		return nil
 	}
 
@@ -98,11 +158,11 @@ func (s *SFTPClient) uploadFile(localPath, remotePath string, dryRun bool) error
 		return fmt.Errorf("failed to transfer data: %w", err)
 	}
 
-	fmt.Printf("Uploaded %s (%d bytes)\n", localPath, n)
+	res.copied(localPath, remoteDisplay(remotePath), n)
 	return nil
 }
 
-func (s *SFTPClient) uploadDir(localDir, remoteDir string, dryRun bool) error {
+func (s *SFTPClient) uploadDir(localDir, remoteDir string, dryRun bool, res *Result) error {
 	return filepath.Walk(localDir, func(currentLocal string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -117,43 +177,52 @@ func (s *SFTPClient) uploadDir(localDir, remoteDir string, dryRun bool) error {
 
 		if info.IsDir() {
 			if dryRun {
-				fmt.Printf("[dry-run] mkdir: %s\n", currentRemote)
 				return nil
 			}
 			return s.client.MkdirAll(currentRemote)
 		}
 
-		return s.uploadFile(currentLocal, currentRemote, dryRun)
+		return s.uploadFile(currentLocal, currentRemote, dryRun, res)
 	})
 }
 
 // Download transfers a file or directory from Cloud Shell to local machine
-func (s *SFTPClient) Download(remotePath, localPath string, recurse, dryRun bool) error {
+func (s *SFTPClient) Download(remotePath, localPath string, recurse, dryRun bool) (*Result, error) {
 	resolvedRemote := s.resolveRemotePath(remotePath)
 
 	remoteStat, err := s.client.Stat(resolvedRemote)
 	if err != nil {
-		return fmt.Errorf("remote path not found: %w", err)
+		return nil, fmt.Errorf("remote path not found: %w", err)
 	}
 
+	res := &Result{}
 	if remoteStat.IsDir() {
 		if !recurse {
-			return fmt.Errorf("remote path %s is a directory (use -r / --recurse)", remotePath)
+			return nil, fmt.Errorf("remote path %s is a directory (use -r / --recursive)", remotePath)
 		}
-		return s.downloadDir(resolvedRemote, localPath, dryRun)
+		return res, s.downloadDir(resolvedRemote, localPath, dryRun, res)
 	}
 
-	return s.downloadFile(resolvedRemote, localPath, dryRun)
+	return res, s.downloadFile(resolvedRemote, localPath, dryRun, res)
 }
 
-func (s *SFTPClient) downloadFile(remotePath, localPath string, dryRun bool) error {
-	// If localPath is an existing directory, append the remote base name
-	if stat, err := os.Stat(localPath); err == nil && stat.IsDir() {
+func (s *SFTPClient) downloadFile(remotePath, localPath string, dryRun bool, res *Result) error {
+	// If localPath looks like a directory (ends with / or is an existing dir), append the remote base name
+	if strings.HasSuffix(localPath, "/") || strings.HasSuffix(localPath, string(filepath.Separator)) {
+		if !dryRun {
+			_ = os.MkdirAll(localPath, 0755)
+		}
+		localPath = filepath.Join(localPath, path.Base(remotePath))
+	} else if stat, err := os.Stat(localPath); err == nil && stat.IsDir() {
 		localPath = filepath.Join(localPath, path.Base(remotePath))
 	}
 
 	if dryRun {
-		fmt.Printf("[dry-run] download: %s -> %s\n", remotePath, localPath)
+		var size int64
+		if stat, err := s.client.Stat(remotePath); err == nil {
+			size = stat.Size()
+		}
+		res.copied(remoteDisplay(remotePath), localPath, size)
 		return nil
 	}
 
@@ -178,11 +247,11 @@ func (s *SFTPClient) downloadFile(remotePath, localPath string, dryRun bool) err
 		return fmt.Errorf("failed to write local file: %w", err)
 	}
 
-	fmt.Printf("Downloaded %s (%d bytes)\n", localPath, n)
+	res.copied(remoteDisplay(remotePath), localPath, n)
 	return nil
 }
 
-func (s *SFTPClient) downloadDir(remoteDir, localDir string, dryRun bool) error {
+func (s *SFTPClient) downloadDir(remoteDir, localDir string, dryRun bool, res *Result) error {
 	walker := s.client.Walk(remoteDir)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
@@ -199,7 +268,6 @@ func (s *SFTPClient) downloadDir(remoteDir, localDir string, dryRun bool) error 
 
 		if stat.IsDir() {
 			if dryRun {
-				fmt.Printf("[dry-run] mkdir local: %s\n", currentLocal)
 				continue
 			}
 			if err := os.MkdirAll(currentLocal, 0755); err != nil {
@@ -208,7 +276,7 @@ func (s *SFTPClient) downloadDir(remoteDir, localDir string, dryRun bool) error 
 			continue
 		}
 
-		if err := s.downloadFile(walker.Path(), currentLocal, dryRun); err != nil {
+		if err := s.downloadFile(walker.Path(), currentLocal, dryRun, res); err != nil {
 			return err
 		}
 	}
@@ -216,23 +284,24 @@ func (s *SFTPClient) downloadDir(remoteDir, localDir string, dryRun bool) error 
 }
 
 // Sync uploads only modified or missing files by comparing checksums over the open connection
-func (s *SFTPClient) Sync(localPath, remotePath string, recurse, dryRun bool) error {
+func (s *SFTPClient) Sync(localPath, remotePath string, recurse, dryRun bool) (*Result, error) {
 	localStat, err := os.Stat(localPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	targetRemote := s.resolveRemotePath(remotePath)
+	res := &Result{}
 
 	if !localStat.IsDir() {
-		return s.syncSingleFile(localPath, targetRemote, dryRun)
+		return res, s.syncSingleFile(localPath, targetRemote, dryRun, res)
 	}
 
 	if !recurse {
-		return fmt.Errorf("%s is a directory (use -r / --recurse to sync)", localPath)
+		return nil, fmt.Errorf("%s is a directory (use -r / --recursive to sync)", localPath)
 	}
 
-	return filepath.Walk(localPath, func(currentLocal string, info os.FileInfo, err error) error {
+	err = filepath.Walk(localPath, func(currentLocal string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -251,11 +320,17 @@ func (s *SFTPClient) Sync(localPath, remotePath string, recurse, dryRun bool) er
 			return nil
 		}
 
-		return s.syncSingleFile(currentLocal, currentRemote, dryRun)
+		return s.syncSingleFile(currentLocal, currentRemote, dryRun, res)
 	})
+	return res, err
 }
 
-func (s *SFTPClient) syncSingleFile(localFile, remoteFile string, dryRun bool) error {
+func (s *SFTPClient) syncSingleFile(localFile, remoteFile string, dryRun bool, res *Result) error {
+	// If remoteFile is an existing directory, compare against the file inside it
+	if stat, err := s.client.Stat(remoteFile); err == nil && stat.IsDir() {
+		remoteFile = path.Join(remoteFile, filepath.Base(localFile))
+	}
+
 	localMD5, err := calculateMD5(localFile)
 	if err != nil {
 		return err
@@ -269,13 +344,82 @@ func (s *SFTPClient) syncSingleFile(localFile, remoteFile string, dryRun bool) e
 			remoteMD5, err := s.getRemoteMD5(remoteFile)
 			if err == nil && localMD5 == remoteMD5 {
 				// File is identical, skip transfer!
+				res.skip(localFile, remoteDisplay(remoteFile))
 				return nil
 			}
 		}
 	}
 
 	// File is different or missing -> upload
-	return s.uploadFile(localFile, remoteFile, dryRun)
+	return s.uploadFile(localFile, remoteFile, dryRun, res)
+}
+
+// SyncDown downloads only modified or missing files by comparing checksums
+func (s *SFTPClient) SyncDown(remotePath, localPath string, recurse, dryRun bool) (*Result, error) {
+	resolvedRemote := s.resolveRemotePath(remotePath)
+
+	remoteStat, err := s.client.Stat(resolvedRemote)
+	if err != nil {
+		return nil, fmt.Errorf("remote path not found: %w", err)
+	}
+
+	res := &Result{}
+	if !remoteStat.IsDir() {
+		return res, s.syncDownFile(resolvedRemote, localPath, dryRun, res)
+	}
+
+	if !recurse {
+		return nil, fmt.Errorf("remote path %s is a directory (use -r / --recursive)", remotePath)
+	}
+
+	walker := s.client.Walk(resolvedRemote)
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			continue
+		}
+
+		relPath, err := filepath.Rel(resolvedRemote, walker.Path())
+		if err != nil {
+			continue
+		}
+
+		currentLocal := filepath.Join(localPath, filepath.FromSlash(relPath))
+		stat := walker.Stat()
+
+		if stat.IsDir() {
+			if dryRun {
+				continue
+			}
+			_ = os.MkdirAll(currentLocal, 0755)
+			continue
+		}
+
+		if err := s.syncDownFile(walker.Path(), currentLocal, dryRun, res); err != nil {
+			return res, err
+		}
+	}
+	return res, nil
+}
+
+func (s *SFTPClient) syncDownFile(remoteFile, localFile string, dryRun bool, res *Result) error {
+	// If localFile is an existing directory, append the remote base name
+	if stat, err := os.Stat(localFile); err == nil && stat.IsDir() {
+		localFile = filepath.Join(localFile, path.Base(remoteFile))
+	}
+
+	remoteMD5, err := s.getRemoteMD5(remoteFile)
+	if err != nil {
+		return err
+	}
+
+	// If local file exists and checksums match, skip
+	if localMD5, err := calculateMD5(localFile); err == nil && localMD5 == remoteMD5 {
+		res.skip(remoteDisplay(remoteFile), localFile)
+		return nil
+	}
+
+	// File is different or missing -> download
+	return s.downloadFile(remoteFile, localFile, dryRun, res)
 }
 
 func (s *SFTPClient) getRemoteMD5(remoteFile string) (string, error) {
