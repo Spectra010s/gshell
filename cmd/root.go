@@ -19,6 +19,10 @@ var (
 		verbose bool
 		noColor bool
 	}
+
+	// version is the release version. It can be overridden at build time with
+	// -ldflags "-X gshell/cmd.version=<version>".
+	version = "2.0.0"
 )
 
 // getUI returns the shared UI, initialized after flags have been parsed.
@@ -43,7 +47,7 @@ remote commands or move files between your machine and Cloud Shell.`,
   gshell run "git status"         # run a command in Cloud Shell
   gshell status                   # show environment details
   gshell cp ./project remote:~/   # copy files to Cloud Shell`,
-	Version:       "2.0.0",
+	Version:       version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
