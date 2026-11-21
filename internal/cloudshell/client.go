@@ -181,6 +181,41 @@ func (c *Client) StartEnvironment(ctx context.Context, accessToken string) (*Ope
 	return &op, nil
 }
 
+// AuthorizeEnvironment pushes the user's OAuth credentials into the running
+// Cloud Shell session so in-shell gcloud commands work without a manual login.
+// The call is synchronous and returns once the session accepts the token.
+func (c *Client) AuthorizeEnvironment(ctx context.Context) error {
+	tok, err := c.tokenSource.Token()
+	if err != nil {
+		return fmt.Errorf("failed to load access token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s:authorize", apiBaseURL, defaultEnvironmentName)
+	data, err := json.Marshal(map[string]string{"accessToken": tok.AccessToken})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("authorize environment request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("authorize environment failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
 // WaitForOperation polls a Google LRO until it reports done
 func (c *Client) WaitForOperation(ctx context.Context, opName string) error {
 	ticker := time.NewTicker(1 * time.Second)
@@ -288,6 +323,12 @@ func (c *Client) Prepare(ctx context.Context, onStage func(string)) (*Connection
 		if err != nil {
 			return nil, fmt.Errorf("failed to refresh environment after start: %w", err)
 		}
+	}
+
+	// 3. Refresh credentials in the session so in-shell gcloud commands are
+	// authenticated on every connect, not only when this run started the VM.
+	if err := c.AuthorizeEnvironment(ctx); err != nil {
+		return nil, err
 	}
 
 	if env.SSHHost == "" {
