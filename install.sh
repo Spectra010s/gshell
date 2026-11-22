@@ -1,82 +1,103 @@
-#!/bin/bash
+#!/usr/bin/env sh
+#
+# Install a prebuilt gshell release.
+#
+# Usage:
+#   ./install.sh
+#   GSHELL_VERSION=2.0.0 ./install.sh
+#   GSHELL_INSTALL_DIR=~/bin ./install.sh
+#   PREFIX=/usr/local ./install.sh
 
-set -e
+set -eu
 
-INSTALL_DIR="${PREFIX:-/usr/local}/bin"
-COMPLETION_DIR="${PREFIX:-/usr/local}/etc/bash_completion.d"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO=Spectra010s/gshell
 
-echo ""
-echo "  Installing gshell..."
-echo ""
-
-# Helper to open a URL in the user's browser if possible
-open_url() {
-    url="$1"
-    if command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$url" >/dev/null 2>&1 || true
-    elif command -v open >/dev/null 2>&1; then
-        open "$url" >/dev/null 2>&1 || true
-    elif command -v start >/dev/null 2>&1; then
-        start "$url" >/dev/null 2>&1 || true
-    else
-        echo "  Visit: $url"
-    fi
-}
-
-# Check gcloud is installed (interactive)
-if ! command -v gcloud &>/dev/null; then
-    echo "  ⚠️  gcloud is not installed."
-    echo "  Install it from: https://cloud.google.com/sdk/docs/install"
-    read -p "Open the installation page in your browser now? [y/N] " resp
-    if [ "$resp" = "y" ] || [ "$resp" = "Y" ]; then
-        open_url "https://cloud.google.com/sdk/docs/install"
-        echo "  Opened browser. Follow the instructions and re-run this installer."
-    else
-        echo "  Please install the Cloud SDK and re-run this script."
-    fi
-    exit 1
+say() { printf '%s\n' "$*" >&2; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+# Termux has no /etc/resolv.conf, so a prebuilt Linux binary cannot resolve
+# DNS there. Termux users get gshell from termux-packages instead.
+if [ -n "${TERMUX_VERSION:-}" ] || [ "$(uname -o 2>/dev/null || true)" = "Android" ]; then
+	die "Termux is not supported by this installer; install gshell from termux-packages instead"
 fi
 
-echo "  ✓ gcloud found: $(gcloud --version | head -n1)"
+for cmd in curl tar; do
+	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required"
+done
 
-# Check for cloud-shell alpha subcommand and offer to install components
-if ! gcloud alpha cloud-shell --help >/dev/null 2>&1; then
-    echo "  ⚠️  Cloud Shell alpha subcommand not available. This script recommends installing the 'alpha' components."
-    read -p "Run 'gcloud components install alpha' now? [y/N] " resp
-    if [ "$resp" = "y" ] || [ "$resp" = "Y" ]; then
-        echo "  Installing alpha components in background..."
-        gcloud components install alpha >/dev/null 2>&1 &
-        echo "  Installation started in background; re-run installer after it completes."
-        exit 0
-    else
-        echo "  You can enable it later with: gcloud components install alpha"
-    fi
+case "$(uname -s)" in
+Linux) os=Linux ;;
+Darwin) os=Darwin ;;
+*) die "unsupported operating system: $(uname -s)" ;;
+esac
+
+case "$(uname -m)" in
+x86_64 | amd64) arch=x86_64 ;;
+arm64 | aarch64) arch=arm64 ;;
+*) die "unsupported architecture: $(uname -m)" ;;
+esac
+
+version=${GSHELL_VERSION:-}
+if [ -z "$version" ]; then
+	url=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+		"https://github.com/$REPO/releases/latest") ||
+		die "could not determine the latest release"
+	version=${url##*/tag/}
+	case $version in
+	v[0-9]*) version=${version#v} ;;
+	*) die "could not determine the latest release" ;;
+	esac
 fi
+version=${version#v}
 
-# Create install dir if needed
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$COMPLETION_DIR"
+asset="gshell_${version}_${os}_${arch}.tar.gz"
+base="https://github.com/$REPO/releases/download/v${version}"
 
-# Copy gshell
-cp "$SCRIPT_DIR/gshell" "$INSTALL_DIR/gshell"
-chmod +x "$INSTALL_DIR/gshell"
-echo "  ✓ gshell installed to $INSTALL_DIR/gshell"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/gshell.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT INT TERM
 
-# Copy completion script
-cp "$SCRIPT_DIR/gshell-completion.bash" "$COMPLETION_DIR/gshell-completion.bash"
-echo "  ✓ completion script installed to $COMPLETION_DIR/gshell-completion.bash"
+say "Downloading $asset"
+curl -fSL --progress-bar -o "$tmp/$asset" "$base/$asset" ||
+	die "download failed; does v$version exist?"
 
-# Source completion in .bashrc if not already there
-if ! grep -q "gshell-completion" "$HOME/.bashrc"; then
-    echo "" >> "$HOME/.bashrc"
-    echo "# gshell completion" >> "$HOME/.bashrc"
-    echo "source \"$COMPLETION_DIR/gshell-completion.bash\"" >> "$HOME/.bashrc"
-    echo "  ✓ Completion sourced in .bashrc"
+say "Verifying checksum"
+curl -fsSL -o "$tmp/checksums.txt" "$base/gshell_${version}_checksums.txt" ||
+	die "could not download checksums"
+expected=$(awk -v f="$asset" '$2 == f { print $1 }' "$tmp/checksums.txt")
+[ -n "$expected" ] || die "no checksum found for $asset"
+
+if command -v sha256sum >/dev/null 2>&1; then
+	actual=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+	actual=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+elif command -v openssl >/dev/null 2>&1; then
+	actual=$(openssl dgst -sha256 "$tmp/$asset" | awk '{print $NF}')
+else
+	die "no sha256 tool found (sha256sum, shasum, or openssl)"
 fi
+[ "$actual" = "$expected" ] || die "checksum mismatch for $asset"
 
-echo ""
-echo "  gshell installed successfully!"
-echo "  Run: source ~/.bashrc or open a new terminal to get started."
-echo "  Then type: gshell --help"
-echo ""
+tar -xzf "$tmp/$asset" -C "$tmp"
+[ -f "$tmp/gshell" ] || die "archive does not contain gshell"
+
+if [ -n "${GSHELL_INSTALL_DIR:-}" ]; then
+	dir=$GSHELL_INSTALL_DIR
+elif [ -n "${PREFIX:-}" ]; then
+	dir=$PREFIX/bin
+else
+	dir=$HOME/.local/bin
+fi
+case $dir in
+/*) ;;
+*) dir=$PWD/$dir ;;
+esac
+
+mkdir -p "$dir"
+install -m 0755 "$tmp/gshell" "$dir/gshell"
+printf 'Installed %s/gshell (%s)\n' "$dir" "$version"
+
+case ":$PATH:" in
+*":$dir:"*) ;;
+*) say "Note: $dir is not in PATH." ;;
+esac
+
+say "For shell completions, run: gshell completion bash  (or zsh, fish)"
