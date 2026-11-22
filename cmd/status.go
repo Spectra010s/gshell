@@ -11,9 +11,6 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show your Cloud Shell environment status",
-	Long: `Show the state of your Cloud Shell environment.
-
-If the environment is suspended, run gshell to start it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		u := getUI()

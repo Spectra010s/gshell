@@ -16,7 +16,6 @@ var configCmd = &cobra.Command{
 var configSetCmd = &cobra.Command{
 	Use:   "set project <project-id>",
 	Short: "Set the project to use in Cloud Shell",
-	Long:  `Set the Google Cloud project that gshell activates when it connects.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if args[0] != "project" {

@@ -39,10 +39,6 @@ func getUI() *appui.UI {
 var rootCmd = &cobra.Command{
 	Use:   "gshell",
 	Short: "Terminal client for Google Cloud Shell",
-	Long: `Connect to Google Cloud Shell over SSH without installing the Google Cloud SDK.
-
-Running gshell with no subcommand opens an interactive shell. Subcommands run
-remote commands or move files between your machine and Cloud Shell.`,
 	Example: `  gshell                          # open an interactive session
   gshell run "git status"         # run a command in Cloud Shell
   gshell status                   # show environment details

@@ -19,7 +19,7 @@ var (
 
 var cpCmd = &cobra.Command{
 	Use:   "cp [flags] <sources...> <dest>",
-	Short: "Copy files between local machine and Cloud Shell",
+	Short: "Copy files between your machine and Cloud Shell",
 	Long: `Copy files between the local and remote file systems.
 
 A 'remote:' prefix on any path indicates it refers to the Cloud Shell

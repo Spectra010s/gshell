@@ -12,10 +12,7 @@ import (
 var runCmd = &cobra.Command{
 	Use:   "run <command...>",
 	Short: "Run a command on Cloud Shell",
-	Long: `Execute arbitrary commands remotely on Google Cloud Shell and stream the output back.
-
-Examples:
-  gshell run ls -la
+	Example: `  gshell run ls -la
   gshell run "cd myproject && git status"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

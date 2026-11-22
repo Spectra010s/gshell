@@ -12,7 +12,6 @@ import (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Manage Google authentication credentials",
-	Long:  `Authenticate gshell with your Google account to access Cloud Shell sessions and workspaces.`,
 }
 
 var loginCmd = &cobra.Command{
