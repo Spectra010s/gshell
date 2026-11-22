@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"syscall"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -58,7 +57,7 @@ func InteractiveSession(client *ssh.Client, project string) error {
 
 	// Watch for window resize signals (SIGWINCH) and update remote PTY
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGWINCH)
+	notifyResize(sigChan)
 	go func() {
 		for range sigChan {
 			if w, h, err := term.GetSize(stdinFd); err == nil {
