@@ -1,0 +1,76 @@
+# This is an example .goreleaser.yml file with some sensible defaults.
+# Make sure to check the documentation at https://goreleaser.com
+
+# The lines below are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/need to use them.
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+builds:
+  - main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w -X gshell/cmd.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+changelog:
+  disable: true
+  sort: asc
+  filters:
+    exclude:
+      - '^docs(\(.+\))?:'
+      - '^test(\(.+\))?:'
+
+release:
+  name_template: "gshell {{ .Tag }}"
+  header: |
+    ## gshell {{ .Tag }}
+
+    gshell is a standalone terminal client for Google Cloud Shell. SSH in,
+    transfer files, and run remote commands without gcloud or Python.
+
+    This is the v2 release: a full rewrite of the v1 bash wrapper in Go.
+
+    ### Breaking changes
+
+    - `send`, `get`, and `sync` are replaced by `cp` (`cp --sync` for sync)
+    - `open` was removed
+    - the bash script and its completion file are gone
+
+    ## Install
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/Spectra010s/gshell/{{ .Tag }}/install.sh | sh
+    ```
+
+    On Windows, download the `.zip` below or run:
+
+    ```powershell
+    irm https://raw.githubusercontent.com/Spectra010s/gshell/{{ .Tag }}/install.ps1 | iex
+    ```
+
+    Or install from the archive or source below.

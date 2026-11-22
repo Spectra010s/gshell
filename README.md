@@ -1,147 +1,274 @@
 # gshell
 
-> A lightweight bash wrapper around `gcloud alpha cloud-shell` that makes working with Google Cloud Shell from your terminal feel natural.
+> A terminal client for Google Cloud Shell.
 
-Instead of typing `gcloud alpha cloud-shell ssh --authorize-session` every time, you just type `gshell`.
-
-**Author**: [Adeloye Adetayo](https://spectra010s.biuld.app)
+`gshell` talks to Google Cloud Shell directly, without `gcloud`, Python, or a bundled SDK. It signs in with your Google account, manages the environment, and gives you an interactive session, one-shot commands, and file transfers over SSH/SFTP.
 
 ---
 
 ## Features
 
-- **Quick shell** — open an interactive Cloud Shell session (`gshell`)
-- **Send / Get** — upload or download files and folders (`gshell send`, `gshell get`)
-- **Sync** — upload only changed files, fast incremental sync (`gshell sync`)
-- **Run** — run arbitrary commands remotely (`gshell run`)
-- **Browser open** — open Cloud Shell in the browser (`gshell open`)
-- **Status** — show current gcloud account and project info (`gshell status`)
+- **Interactive shell** — full PTY session with terminal resize
+- **Run** — execute a command on Cloud Shell and stream its output
+- **Copy** — `cp` in either direction over SFTP, with dry-run and checksum sync
+- **Project** — activate a project inside the session, the same way `gcloud` does
+- **Auth** — PKCE sign-in, account display, logout with server-side revocation
+- **Mount command** — print the `sshfs` command for your home directory
 
 ---
 
 ## Requirements
 
-- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud`)
-- `gcloud` alpha components — the installer will detect and offer to set this up for you
+- A Google account with Cloud Shell access
+- Linux, macOS, or Windows
+
+Building from source needs Go 1.27 or newer. Installing a release does not.
 
 ---
 
 ## Installation
 
-```bash
-git clone https://github.com/Spectra010s/gshell.git
-cd gshell
-chmod +x install.sh
-./install.sh
+Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Spectra010s/gshell/main/install.sh | sh
 ```
 
-Then reload your shell:
+Windows (PowerShell):
 
-```bash
-source ~/.bashrc
+```powershell
+irm https://raw.githubusercontent.com/Spectra010s/gshell/main/install.ps1 | iex
 ```
 
-The installer will:
-- Check if `gcloud` is installed and offer to open the install page if not
-- Check if alpha components are available and offer to install them
-- Copy `gshell` to `$PREFIX/bin` (works on Termux and standard Linux)
-- Set up tab completion automatically
+Both installers resolve the latest release, download the archive for your
+platform, verify its SHA-256 against `checksums.txt`, and install the binary
+(`~/.local/bin` on Unix, `%LOCALAPPDATA%\Programs\gshell` on Windows), adding it
+to `PATH` when needed.
 
-### Manual installation
+| Override | Effect |
+|---|---|
+| `GSHELL_VERSION=2.0.0` / `-Version 2.0.0` | Install a specific tag instead of the latest |
+| `GSHELL_INSTALL_DIR=~/bin` / `-InstallDir C:\Tools\gshell` | Choose the destination |
+| `PREFIX=/usr/local` | Unix destination becomes `$PREFIX/bin` |
 
-- Copy `gshell` to a directory on your `PATH` and make it executable
-- Copy `gshell-completion.bash` into your Bash completion directory and source it
+To install by hand, download the archive for your platform from the
+[releases page](https://github.com/Spectra010s/gshell/releases), verify it
+against `checksums.txt`, and put the binary on your `PATH`.
+
+### Termux
+
+The installer does not support Termux: a prebuilt Linux binary cannot resolve
+DNS there, because Termux has no `/etc/resolv.conf`. A termux-packages build is
+pending.
 
 ---
 
-## Files
+## Quick start
 
-- `gshell` — main script (CLI wrapper around Cloud Shell)
-- `install.sh` — installer that copies files and sets up completion
-- `gshell-completion.bash` — Bash tab completion for all subcommands
-
----
-
-## Usage
-
-```bash
-gshell                           # Enter Cloud Shell (interactive SSH)
-gshell send [-r] <file|folder>   # Upload file or folder to Cloud Shell
-gshell get  [-r] <file|folder>   # Download file or folder from Cloud Shell
-gshell sync [-r] <file|folder>   # Sync only changed files to Cloud Shell
-gshell run  <command>            # Run a command on Cloud Shell
-gshell open                      # Open Cloud Shell in browser
-gshell status                    # Show current gcloud project & account info
-gshell -v | --version            # Show version
-gshell -h | --help               # Show help
-```
-
-### Flags
-
-- `-r` — recursive, for folders on `send`, `get`, and `sync`
-- `-n` / `--dry-run` — preview what would be transferred without uploading or downloading (available on `send` and `get`)
-
----
-
-## Examples
-
-```bash
-# Enter Cloud Shell
-gshell
-
-# Upload a single file
-gshell send index.html
-
-# Upload a folder
-gshell send -r myproject/
-
-# Preview what would be uploaded without transferring
-gshell send -n -r myproject/
-
-# Download a file from Cloud Shell
-gshell get config.json
-
-# Download a folder
-gshell get -r bd/
-
-# Sync a single changed file
-gshell sync bd/index.html
-
-# Sync an entire folder (only uploads changed files)
-gshell sync -r bd/
-
-# Run a command remotely
-gshell run ls ~
-gshell run "cd myproject && git status"
-
-# Check your active project and account
-gshell status
-
-# Open Cloud Shell in the browser
-gshell open
+```sh
+gshell auth login    # sign in once, in the browser
+gshell               # open a Cloud Shell session
 ```
 
 ---
 
-## How sync works
+## Commands
 
-`gshell sync` compares local and remote files using checksums (`md5sum` or `md5` depending on your system, with a size/mtime fallback). Only files that have changed are uploaded — similar to `rsync` but built entirely on top of `gcloud scp`.
+### `gshell`
+
+Opens an interactive session. If a project is configured, it is passed to the
+session as `DEVSHELL_PROJECT_ID`, which Cloud Shell turns into `gcloud config`.
+
+### `gshell auth`
+
+```sh
+gshell auth login    # sign in with the OAuth PKCE flow
+gshell auth status   # show the account and credentials path
+gshell auth logout   # revoke the token with Google, then delete it locally
+```
+
+```
+$ gshell auth status
+✓ Authenticated to Google Cloud Shell
+  Account: you@example.com
+  Credentials: ~/.config/gshell/credentials.json
+```
+
+### `gshell status`
+
+Shows the environment without opening a shell.
+
+```
+$ gshell status
+  Account      you@example.com
+  Project      my-project
+  State        Running
+  SSH          user@35.189.228.144:6000
+  Public keys  10 registered
+```
+
+If the environment is suspended, the next `gshell` or `gshell run` starts it.
+
+### `gshell run`
+
+Runs a command on Cloud Shell and streams stdout/stderr.
+
+```sh
+gshell run ls -la
+gshell run "cd project && git status"
+```
+
+### `gshell cp`
+
+Copies files between your machine and Cloud Shell. Direction is determined
+by the `remote:` prefix; paths after it are relative to the remote home.
+
+```sh
+gshell cp notes.txt remote:~/            # upload
+gshell cp -r ./project remote:~/project  # upload a directory
+gshell cp remote:~/app.log ./logs/       # download
+```
+
+| Flag | Meaning |
+|---|---|
+| `-r, --recursive` | Required when any source is a directory |
+| `-e, --expand` | Evaluate remote names as a bash expression (globs, `~`, `$VAR`) |
+| `-n, --dry-run` | Print planned transfers without copying |
+| `--sync` | Transfer only files whose checksums differ |
+
+```
+$ gshell cp -r --sync ./project remote:~/project
+✓ Copied 2 files (12.4 KB), 5 unchanged
+
+$ gshell cp -n notes.txt remote:~/
+notes.txt -> remote:~/notes.txt
+1 file would be copied (128 B)
+```
+
+`--dry-run` output goes to stdout; progress goes to stderr, so
+`gshell cp ... 2>/dev/null` shows only results. Per-file lines for real
+transfers require `--verbose`.
+
+### `gshell config`
+
+```sh
+gshell config set project my-project   # project used for new sessions
+gshell config show
+```
+
+### `gshell get-mount-command`
+
+Prints the `sshfs` command that would mount the Cloud Shell home directory at a
+local path. gshell does not run it.
+
+Mounting attaches your Cloud Shell home directory to a local path over sshfs,
+so you can access Cloud Shell files from your local directory tree.
+
+```
+$ gshell get-mount-command ~/cloudshell
+sshfs user@35.189.228.144: ~/cloudshell -p 6000 -oIdentityFile=... -oStrictHostKeyChecking=no
+```
+
+Requires `sshfs` and FUSE, plus permission to mount. Not available on Android
+without root.
+
+### `gshell completion`
+
+Generates completion scripts for `bash`, `zsh`, `fish`, and `powershell`:
+
+```sh
+gshell completion bash
+```
 
 ---
 
-## Tab completion
+## Projects
 
-Tab completion is set up automatically by the installer. After reloading your shell, type `gshell` and press Tab to see all available commands, flags, and file suggestions.
+The project is the Google Cloud project your Cloud Shell session works in.
+Inside the session it becomes the active project, so `gcloud` and other tools
+use it without extra flags, and `gshell status` reports it.
+
+Set a default once:
+
+```sh
+gshell config set project my-project
+```
+
+Override it for a single run with `--project` or `GSHELL_PROJECT`.
+
+Resolution order:
+
+1. `--project <id>`
+2. `GSHELL_PROJECT` environment variable
+3. `gshell config set project <id>`
+
+If none is set, the session starts without a project (`gshell status` shows
+`Project  not set`).
+
+---
+
+## Config files
+
+gshell stores its credentials, settings, and SSH key under `~/.config/gshell`.
+
+| Path | Contents |
+|---|---|
+| `~/.config/gshell/credentials.json` | OAuth token and account email (0600) |
+| `~/.config/gshell/config.json` | Saved project |
+| `~/.config/gshell/id_rsa` | SSH private key (0600), generated on first connect |
+
+## Environment variables
+
+| Variable | Effect |
+|---|---|
+| `GSHELL_PROJECT` | Project to activate, overrides saved config |
+| `NO_COLOR` | Disable colored output |
+| `TERM=dumb` | Disable color and spinner animation |
+| `GSHELL_CLIENT_ID` / `GSHELL_CLIENT_SECRET` | Use a custom OAuth client |
+
+### Global flags
+
+| Flag | Effect |
+|---|---|
+| `--project <id>` | Project to activate for this run |
+| `--verbose` | Show detailed output, including per-file transfers |
+| `--no-color` | Disable colored output |
+
+---
+
+## Output and exit codes
+
+Results go to stdout, progress and diagnostics to stderr. `gshell` exits `0` on
+success and `1` on failure. A remote command that fails is reported as an error
+with its exit status; gshell does not exit with the remote code.
 
 ---
 
 ## Contributing
 
-PRs welcome. Keep changes small and focused. Update the README if you change CLI behavior.
+Bug reports and pull requests are welcome. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first — it covers the build, commit message,
+and testing conventions.
+
+### Project structure
+
+| Directory | Purpose |
+|---|---|
+| `cmd/` | Cobra commands and flag wiring |
+| `internal/auth/` | OAuth PKCE flow, token storage, revocation |
+| `internal/cloudshell/` | Cloud Shell REST client, keys, environment lifecycle |
+| `internal/ssh/` | SSH, PTY, command execution, SFTP transfers |
+| `internal/config/` | Saved settings (`config.json`) |
+| `internal/ui/` | stdout/stderr split, progress, color |
+
+---
+
+## Maintainer
+
+[Adeloye Adetayo](https://spectra010s.com)
 
 ---
 
 ## License
 
-MIT - see the [LICENSE](LICENSE) file for details.
-
+MIT — see [LICENSE](LICENSE).
