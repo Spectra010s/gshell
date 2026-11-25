@@ -57,9 +57,20 @@ against `checksums.txt`, and put the binary on your `PATH`.
 
 ### Termux
 
-The installer does not support Termux: a prebuilt Linux binary cannot resolve
-DNS there, because Termux has no `/etc/resolv.conf`. A termux-packages build is
-pending.
+```sh
+pkg install tur-repo
+pkg install gshell
+```
+
+`gshell` is packaged in the [Termux User Repository](https://github.com/termux-user-repository/tur)
+(TUR), which is why `tur-repo` comes first.
+
+The release archive is not usable on Termux: a prebuilt Linux binary cannot
+resolve DNS there, because Termux has no `/etc/resolv.conf`. The TUR package is
+built for Termux from source instead.
+
+To build it yourself, install `golang` and `git`, clone the repository, and run
+`go build .`.
 
 ---
 
