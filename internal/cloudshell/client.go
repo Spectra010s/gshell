@@ -54,8 +54,49 @@ type Operation struct {
 
 // OperationError holds error details from a failed LRO
 type OperationError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int               `json:"code"`
+	Message string            `json:"message"`
+	Details []OperationDetail `json:"details,omitempty"`
+}
+
+// OperationDetail is a single typed entry in OperationError.Details
+type OperationDetail struct {
+	Type   string `json:"@type"`
+	Code   string `json:"code"`
+	Reason string `json:"reason"`
+}
+
+// Reason returns the machine-readable failure reason, if Google supplied one
+func (e *OperationError) Reason() string {
+	for _, d := range e.Details {
+		if d.Code != "" {
+			return d.Code
+		}
+		if d.Reason != "" {
+			return d.Reason
+		}
+	}
+	return ""
+}
+
+// operationError converts a failed LRO into a user-facing error, or nil if the
+// operation succeeded. A done operation may still carry an error, so callers
+// must check this before treating completion as success.
+func operationError(op *Operation) error {
+	if op == nil || op.Error == nil {
+		return nil
+	}
+
+	switch reason := op.Error.Reason(); {
+	case reason == "QUOTA_EXCEEDED":
+		return fmt.Errorf("cloud shell quota exceeded: weekly free hours are used up")
+	case op.Error.Message != "":
+		return fmt.Errorf("cloud shell operation failed: %s", op.Error.Message)
+	case reason != "":
+		return fmt.Errorf("cloud shell operation failed: %s", strings.ToLower(reason))
+	default:
+		return fmt.Errorf("cloud shell operation failed (%d)", op.Error.Code)
+	}
 }
 
 // ConnectionInfo contains all parameters needed to open an SSH or SFTP connection
@@ -245,11 +286,37 @@ func (c *Client) WaitForOperation(ctx context.Context, opName string) error {
 			}
 
 			if op.Done {
-				if op.Error != nil {
-					return fmt.Errorf("operation error (%d): %s", op.Error.Code, op.Error.Message)
-				}
-				return nil
+				return operationError(&op)
 			}
+		}
+	}
+}
+
+// waitForRunning polls the environment until it reports RUNNING. The start
+// operation can complete before the machine is actually reachable.
+func (c *Client) waitForRunning(ctx context.Context) (*Environment, error) {
+	const timeout = 90 * time.Second
+
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		env, err := c.GetEnvironment(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if env.State == "RUNNING" {
+			return env, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("cloud shell did not start (state: %s)", strings.ToLower(env.State))
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
 		}
 	}
 }
@@ -290,6 +357,9 @@ func (c *Client) Prepare(ctx context.Context, onStage func(string)) (*Connection
 		if err != nil {
 			return nil, err
 		}
+		if err := operationError(op); err != nil {
+			return nil, err
+		}
 		if !op.Done {
 			if err := c.WaitForOperation(ctx, op.Name); err != nil {
 				return nil, err
@@ -312,16 +382,21 @@ func (c *Client) Prepare(ctx context.Context, onStage func(string)) (*Connection
 			return nil, err
 		}
 
+		if err := operationError(op); err != nil {
+			return nil, err
+		}
+
 		if !op.Done {
 			if err := c.WaitForOperation(ctx, op.Name); err != nil {
 				return nil, err
 			}
 		}
 
-		// Refresh environment details after boot to get host and port
-		env, err = c.GetEnvironment(ctx)
+		// The start operation can finish before the machine is reachable, so
+		// wait for the environment to report RUNNING before using it
+		env, err = c.waitForRunning(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to refresh environment after start: %w", err)
+			return nil, err
 		}
 	}
 
