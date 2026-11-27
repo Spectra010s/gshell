@@ -39,39 +39,11 @@ archives:
         formats: [zip]
 
 changelog:
-  disable: true
-  sort: asc
-  filters:
-    exclude:
-      - '^docs(\(.+\))?:'
-      - '^test(\(.+\))?:'
+  use: github-native
 
 release:
   name_template: "gshell {{ .Tag }}"
   header: |
-    ## gshell {{ .Tag }}
+    ## Fixes
 
-    gshell is a standalone terminal client for Google Cloud Shell. SSH in,
-    transfer files, and run remote commands without gcloud or Python.
-
-    This is the v2 release: a full rewrite of the v1 bash wrapper in Go.
-
-    ### Breaking changes
-
-    - `send`, `get`, and `sync` are replaced by `cp` (`cp --sync` for sync)
-    - `open` was removed
-    - the bash script and its completion file are gone
-
-    ## Install
-
-    ```sh
-    curl -fsSL https://raw.githubusercontent.com/Spectra010s/gshell/{{ .Tag }}/install.sh | sh
-    ```
-
-    On Windows, download the `.zip` below or run:
-
-    ```powershell
-    irm https://raw.githubusercontent.com/Spectra010s/gshell/{{ .Tag }}/install.ps1 | iex
-    ```
-
-    Or install from the archive or source below.
+    - report Cloud Shell quota and start failures instead of a downstream 500
