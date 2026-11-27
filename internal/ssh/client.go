@@ -16,7 +16,9 @@ func Dial(info *cloudshell.ConnectionInfo) (*ssh.Client, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(info.Signer),
 		},
-		// Cloud Shell uses Google-managed infrastructure with dynamic endpoints
+		// Cloud Shell assigns a dynamic host:port and regenerates the VM's host key
+		// when the environment is recreated, so a known_hosts entry would fail on
+		// legitimate reconnects. gcloud's cloud-shell ssh behaves the same way.
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         30 * time.Second,
 	}
